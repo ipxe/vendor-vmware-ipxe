@@ -55,7 +55,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 #define	DOWNLOAD_PROTO_TFTP	/* Trivial File Transfer Protocol */
 #define	DOWNLOAD_PROTO_HTTP	/* Hypertext Transfer Protocol */
-#undef	DOWNLOAD_PROTO_HTTPS	/* Secure Hypertext Transfer Protocol */
+#define	DOWNLOAD_PROTO_HTTPS	/* Secure Hypertext Transfer Protocol */
 #undef	DOWNLOAD_PROTO_FTP	/* File Transfer Protocol */
 #undef	DOWNLOAD_PROTO_TFTM	/* Multicast Trivial File Transfer Protocol */
 #undef	DOWNLOAD_PROTO_SLAM	/* Scalable Local Area Multicast */
@@ -117,15 +117,18 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define DHCP_CMD		/* DHCP management commands */
 #define SANBOOT_CMD		/* SAN boot commands */
 #define LOGIN_CMD		/* Login command */
-#undef	TIME_CMD		/* Time commands */
+#define	TIME_CMD		/* Time commands */
 #undef	DIGEST_CMD		/* Image crypto digest commands */
 //#undef	PXE_CMD			/* PXE commands */
+#define REBOOT_CMD              /* Reboot command */
 
 /*
  * Error message tables to include
  *
  */
 #undef	ERRMSG_80211		/* All 802.11 error descriptions (~3.3kb) */
+
+#define POST_CMD
 
 /*
  * Obscure configuration options
@@ -138,11 +141,12 @@ FILE_LICENCE ( GPL2_OR_LATER );
 				 * number.  Add "bs" to the list of
 				 * make targets.  For example:
 				 * "make bin/rtl8139.dsk bs" */
-#undef	BUILD_ID		/* Include a custom build ID string,
-				 * e.g "test-foo" */
 #undef	NULL_TRAP		/* Attempt to catch NULL function calls */
 #undef	GDBSERIAL		/* Remote GDB debugging over serial */
 #undef	GDBUDP			/* Remote GDB debugging over UDP
 				 * (both may be set) */
+
+/* TODO: Undef before release. */
+#undef GATHER_RANDOM		/* Gather random data and report in the post */
 
 #endif /* CONFIG_GENERAL_H */

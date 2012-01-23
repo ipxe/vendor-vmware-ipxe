@@ -442,7 +442,7 @@ int aoe_attach ( struct ata_device *ata, struct net_device *netdev,
 	aoe->netdev = netdev_get ( netdev );
 	memcpy ( aoe->target, netdev->ll_broadcast, sizeof ( aoe->target ) );
 	aoe->tag = AOE_TAG_MAGIC;
-	aoe->timer.expired = aoe_timer_expired;
+ 	timer_init ( &aoe->timer, aoe_timer_expired, &aoe->refcnt );
 
 	/* Parse root path */
 	if ( ( rc = aoe_parse_root_path ( aoe, root_path ) ) != 0 )

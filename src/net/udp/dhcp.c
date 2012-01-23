@@ -40,6 +40,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <gpxe/dhcp.h>
 #include <gpxe/dhcpopts.h>
 #include <gpxe/dhcppkt.h>
+#include <gpxe/dhcp_arch.h>
 #include <gpxe/features.h>
 
 /** @file
@@ -74,14 +75,10 @@ static uint8_t dhcp_request_options_data[] = {
 	DHCP_MESSAGE_TYPE, DHCP_BYTE ( 0 ),
 	DHCP_MAX_MESSAGE_SIZE,
 	DHCP_WORD ( ETH_MAX_MTU - 20 /* IP header */ - 8 /* UDP header */ ),
-	DHCP_CLIENT_ARCHITECTURE, DHCP_WORD ( 0 ),
-	DHCP_CLIENT_NDI, DHCP_OPTION ( 1 /* UNDI */ , 2, 1 /* v2.1 */ ),
-	DHCP_VENDOR_CLASS_ID,
-	DHCP_STRING (  'P', 'X', 'E', 'C', 'l', 'i', 'e', 'n', 't', ':',
-		       'A', 'r', 'c', 'h', ':', '0', '0', '0', '0', '0', ':',
-		       'U', 'N', 'D', 'I', ':', '0', '0', '2', '0', '0', '1' ),
-	DHCP_USER_CLASS_ID,
-	DHCP_STRING ( 'g', 'P', 'X', 'E' ),
+	DHCP_CLIENT_ARCHITECTURE, DHCP_ARCH_CLIENT_ARCHITECTURE,
+	DHCP_CLIENT_NDI, DHCP_ARCH_CLIENT_NDI,
+	DHCP_VENDOR_CLASS_ID, DHCP_ARCH_VENDOR_CLASS_ID,
+	DHCP_USER_CLASS_ID, DHCP_STRING ( 'g', 'P', 'X', 'E' ),
 	DHCP_PARAMETER_REQUEST_LIST,
 	DHCP_OPTION ( DHCP_SUBNET_MASK, DHCP_ROUTERS, DHCP_DNS_SERVERS,
 		      DHCP_LOG_SERVERS, DHCP_HOST_NAME, DHCP_DOMAIN_NAME,
@@ -1383,6 +1380,11 @@ static struct sockaddr dhcp_peer = {
 };
 
 /**
+ * Get cached DHCPACK where none exists
+ */
+__weak void get_cached_dhcpack ( void ) {}
+
+/**
  * Start DHCP state machine on a network device
  *
  * @v job		Job control interface
@@ -1416,10 +1418,10 @@ int start_dhcp ( struct job_interface *job, struct net_device *netdev ) {
 	dhcp->refcnt.free = dhcp_free;
 	job_init ( &dhcp->job, &dhcp_job_operations, &dhcp->refcnt );
 	xfer_init ( &dhcp->xfer, &dhcp_xfer_operations, &dhcp->refcnt );
+	timer_init ( &dhcp->timer, dhcp_timer_expired, &dhcp->refcnt );
 	dhcp->netdev = netdev_get ( netdev );
 	dhcp->local.sin_family = AF_INET;
 	dhcp->local.sin_port = htons ( BOOTPC_PORT );
-	dhcp->timer.expired = dhcp_timer_expired;
 
 	/* Instantiate child objects and attach to our interfaces */
 	if ( ( rc = xfer_open_socket ( &dhcp->xfer, SOCK_DGRAM, &dhcp_peer,
@@ -1519,13 +1521,13 @@ int start_pxebs ( struct job_interface *job, struct net_device *netdev,
 	dhcp->refcnt.free = dhcp_free;
 	job_init ( &dhcp->job, &dhcp_job_operations, &dhcp->refcnt );
 	xfer_init ( &dhcp->xfer, &dhcp_xfer_operations, &dhcp->refcnt );
+	timer_init ( &dhcp->timer, dhcp_timer_expired, &dhcp->refcnt );
 	dhcp->netdev = netdev_get ( netdev );
 	dhcp->local.sin_family = AF_INET;
 	fetch_ipv4_setting ( netdev_settings ( netdev ), &ip_setting,
 			     &dhcp->local.sin_addr );
 	dhcp->local.sin_port = htons ( BOOTPC_PORT );
 	dhcp->pxe_type = cpu_to_le16 ( pxe_type );
-	dhcp->timer.expired = dhcp_timer_expired;
 
 	/* Construct PXE boot server IP address lists */
 	pxe_discovery_control =

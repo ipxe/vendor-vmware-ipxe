@@ -120,6 +120,12 @@ static struct ipv4_miniroute * ipv4_route ( struct in_addr *dest ) {
 	list_for_each_entry ( miniroute, &ipv4_miniroutes, list ) {
 		if ( ! ( miniroute->netdev->state & NETDEV_OPEN ) )
 			continue;
+		/*
+		 * Net devices without an address are still in the routes
+		 * table since we want to see them in ipv4_rx.
+		 */
+		if ( miniroute->address.s_addr == 0 )
+			continue;
 		local = ( ( ( dest->s_addr ^ miniroute->address.s_addr )
 			    & miniroute->netmask.s_addr ) == 0 );
 		has_gw = ( miniroute->gateway.s_addr );
@@ -224,9 +230,8 @@ static struct io_buffer * ipv4_reassemble ( struct io_buffer * iobuf ) {
 		free_iob ( iobuf );
 
 		/* Set the reassembly timer */
-		fragbuf->frag_timer.timeout = IP_FRAG_TIMEOUT;
-		fragbuf->frag_timer.expired = ipv4_frag_expired;
-		start_timer ( &fragbuf->frag_timer );
+		timer_init ( &fragbuf->frag_timer, ipv4_frag_expired, NULL );
+		start_timer_fixed ( &fragbuf->frag_timer, IP_FRAG_TIMEOUT );
 
 		/* Add the fragment buffer to the list of fragment buffers */
 		list_add ( &fragbuf->list, &frag_buffers );
@@ -381,8 +386,8 @@ static int ipv4_tx ( struct io_buffer *iobuf,
  * This function expects an IP4 network datagram. It processes the headers 
  * and sends it to the transport layer.
  */
-static int ipv4_rx ( struct io_buffer *iobuf, struct net_device *netdev __unused,
-		     const void *ll_source __unused ) {
+static int ipv4_rx ( struct io_buffer *iobuf, struct net_device *netdev,
+		     const void *ll_source ) {
 	struct iphdr *iphdr = iobuf->data;
 	size_t hdrlen;
 	size_t len;
@@ -392,6 +397,7 @@ static int ipv4_rx ( struct io_buffer *iobuf, struct net_device *netdev __unused
 	} src, dest;
 	uint16_t csum;
 	uint16_t pshdr_csum;
+	int found_addr = 0;
 	int rc;
 
 	/* Sanity check the IPv4 header */
@@ -430,6 +436,64 @@ static int ipv4_rx ( struct io_buffer *iobuf, struct net_device *netdev __unused
 		DBG ( "IPv4 length too long at %zd bytes "
 		      "(packet is %zd bytes)\n", len, iob_len ( iobuf ) );
 		goto err;
+	}
+	
+	if ( iphdr->dest.s_addr == INADDR_BROADCAST ||
+	     IN_MULTICAST( ntohl ( iphdr->dest.s_addr ) ) ) {
+	    /* XXX We should probably check that we're subscribed to the
+	     * multicast address.
+	     */
+	    found_addr = 1;
+	}
+	else if ( list_empty ( &ipv4_miniroutes ) ) {
+	    /* The routes list is empty initially, so accept any packet. */
+	    found_addr = 1;
+	}
+	else {
+	    struct ipv4_miniroute *miniroute;
+	    
+	    list_for_each_entry ( miniroute, &ipv4_miniroutes, list ) {
+		struct in_addr network_broadcast = { 0 };
+		struct in_addr network = { 0 };
+		
+		network.s_addr = miniroute->address.s_addr &
+		    miniroute->netmask.s_addr;
+		network_broadcast.s_addr = network.s_addr |
+		    ~miniroute->netmask.s_addr;
+		/*
+		 * Check for an exact address match, a network-wide broadcast
+		 * or, if the packet came in on this NIC and it does not have
+		 * an address.
+		 */
+		if ( miniroute->address.s_addr == iphdr->dest.s_addr ) {
+			found_addr = 1;
+			/* Add the current packet to the end of the ARP table if
+			 * the link layer address is not the broadcast address.
+			 */
+			if ( memcmp ( ll_source,
+				      netdev->ll_broadcast,
+				      netdev->ll_protocol->
+				      ll_addr_len ) != 0 ) {
+				arp_current_packet ( &ipv4_protocol,
+						     netdev->ll_protocol,
+						     &iphdr->src.s_addr,
+						     ll_source );
+			}
+			break;
+		}
+		else if ( network_broadcast.s_addr == iphdr->dest.s_addr ||
+			  (miniroute->netdev == netdev &&
+			   miniroute->address.s_addr == 0) ) {
+			found_addr = 1;
+			break;
+		}
+	    }
+	}
+
+	if (!found_addr) {
+	    DBG2 ( "IPv4 destination '%s' does not match this host\n",
+		   inet_ntoa( iphdr->dest ) );
+	    goto err;
 	}
 
 	/* Print IPv4 header for debugging */
@@ -600,8 +664,6 @@ static int ipv4_create_routes ( void ) {
 		/* Get IPv4 address */
 		address.s_addr = 0;
 		fetch_ipv4_setting ( settings, &ip_setting, &address );
-		if ( ! address.s_addr )
-			continue;
 		/* Get subnet mask */
 		fetch_ipv4_setting ( settings, &netmask_setting, &netmask );
 		/* Calculate default netmask, if necessary */

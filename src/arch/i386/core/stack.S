@@ -10,6 +10,6 @@ FILE_LICENCE ( GPL2_OR_LATER )
 	.align 8
 	.globl _stack
 _stack:
-	.space 4096
+	.space 8192
 	.globl _estack
 _estack:

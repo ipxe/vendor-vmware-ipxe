@@ -295,6 +295,7 @@ endif
 # Include architecture-specific include path
 ifdef ARCH
 INCDIRS		+= arch/$(ARCH)/include
+INCDIRS		+= arch/$(ARCH)/include/$(PLATFORM)
 endif
 
 ###############################################################################
@@ -511,6 +512,13 @@ EMBED_ALL	:= $(foreach i,$(call seq,1,$(words $(EMBEDDED_FILES))),\
 			     \"$(notdir $(word $(i),$(EMBEDDED_FILES)))\" ))
 
 $(BIN)/embedded.o : $(EMBEDDED_FILES) $(EMBEDDED_LIST)
+
+# This file uses .incbin inline assembly to include a binary file.
+# Unfortunately ccache does not detect this dependency and caches builds even
+# when the binary file has changed.
+#
+$(BIN)/embedded.o : override CC := env CCACHE_DISABLE=1 $(CC)
+
 CFLAGS_embedded = -DEMBED_ALL="$(EMBED_ALL)"
 
 # Generate the NIC file from the parsed source files.  The NIC file is
@@ -576,7 +584,8 @@ TGT_LD_IDS	= pci_vendor_id=$(firstword $(TGT_PCI_VENDOR) 0) \
 #
 TGT_LD_FLAGS	= $(foreach SYM,$(TGT_LD_PREFIX) $(TGT_LD_DRIVERS) obj_config,\
 		    -u $(SYM) --defsym check_$(SYM)=$(SYM) ) \
-		  $(patsubst %,--defsym %,$(TGT_LD_IDS))
+		  $(patsubst %,--defsym %,$(TGT_LD_IDS)) \
+		  $(TGT_LD_FLAGS_PRE)
 
 # Calculate makerom flags for the specific target
 # (e.g. "bin/dfe538--prism2_pci.zrom.tmp") and derive the variables:
@@ -858,17 +867,18 @@ CLEANUP += $(ZBIN)
 # The EFI image converter
 #
 ELF2EFI_CFLAGS	:= -I$(BINUTILS_DIR)/include -I$(BFD_DIR)/include \
-		   -idirafter include -L$(BINUTILS_DIR)/lib -L$(BFD_DIR)/lib \
-		   -lbfd -liberty -lz
+		   -I$(ZLIB_DIR)/include -idirafter include \
+		   -L$(BINUTILS_DIR)/lib -L$(BFD_DIR)/lib \
+		   -L$(ZLIB_DIR)/lib -lbfd -liberty -lz
 
 $(ELF2EFI32) : util/elf2efi.c $(MAKEDEPS)
 	$(QM)$(ECHO) "  [HOSTCC] $@"
-	$(Q)$(HOST_CC) $(ELF2EFI_CFLAGS) -DMDE_CPU_IA32 -O2 -o $@ $<
+	$(Q)$(HOST_CC) $< $(ELF2EFI_CFLAGS) -DEFI_TARGET_IA32 -O2 -o $@
 CLEANUP += $(ELF2EFI32)
 
 $(ELF2EFI64) : util/elf2efi.c $(MAKEDEPS)
 	$(QM)$(ECHO) "  [HOSTCC] $@"
-	$(Q)$(HOST_CC) $(ELF2EFI_CFLAGS) -DMDE_CPU_X64 -O2 -o $@ $<
+	$(Q)$(HOST_CC) $< $(ELF2EFI_CFLAGS) -DEFI_TARGET_X64 -O2 -o $@
 CLEANUP += $(ELF2EFI64)
 
 $(EFIROM) : util/efirom.c $(MAKEDEPS)

@@ -18,6 +18,7 @@
 
 FILE_LICENCE ( GPL2_OR_LATER );
 
+#include <stdio.h>
 #include <string.h>
 #include <gpxe/list.h>
 #include <gpxe/tables.h>
@@ -99,6 +100,19 @@ static void remove_devices ( int flags ) {
 		rootdev_remove ( rootdev );
 		list_del ( &rootdev->dev.siblings );
 	}
+}
+
+struct device *find_root_device(const char *name)
+{
+	struct device *retval;
+	
+	list_for_each_entry( retval, &devices, siblings ) {
+		if ( strcmp( retval->name, name ) == 0 ) {
+			return retval;
+		}
+	}
+	
+	return NULL;
 }
 
 struct startup_fn startup_devices __startup_fn ( STARTUP_NORMAL ) = {

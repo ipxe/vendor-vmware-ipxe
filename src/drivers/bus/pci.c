@@ -206,6 +206,8 @@ static int pci_probe ( struct pci_device *pci ) {
 	}
 
 	DBG ( "...no driver found\n" );
+	pci->driver = NULL;
+	pci->driver_name = "none";
 	return -ENOTTY;
 }
 
@@ -215,7 +217,8 @@ static int pci_probe ( struct pci_device *pci ) {
  * @v pci		PCI device
  */
 static void pci_remove ( struct pci_device *pci ) {
-	pci->driver->remove ( pci );
+	if ( pci->driver )
+		pci->driver->remove ( pci );
 	DBG ( "Removed PCI device %02x:%02x.%x\n", pci->bus,
 	      PCI_SLOT ( pci->devfn ), PCI_FUNC ( pci->devfn ) );
 }
@@ -292,13 +295,9 @@ static int pcibus_probe ( struct root_device *rootdev ) {
 			INIT_LIST_HEAD ( &pci->dev.children );
 			
 			/* Look for a driver */
-			if ( pci_probe ( pci ) == 0 ) {
-				/* pcidev registered, we can drop our ref */
-				pci = NULL;
-			} else {
-				/* Not registered; re-use struct pci_device */
-				list_del ( &pci->dev.siblings );
-			}
+			pci_probe ( pci );
+			/* drop our ref */
+			pci = NULL;
 		}
 	}
 

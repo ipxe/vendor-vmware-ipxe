@@ -49,7 +49,28 @@ struct retry_timer {
 	 * timeout has already exceeded @c MAX_TIMEOUT.
 	 */
 	void ( * expired ) ( struct retry_timer *timer, int over );
+	/** Reference counter
+	 *
+	 * If this interface is not part of a reference-counted
+	 * object, this field may be NULL.
+	 */
+	struct refcnt *refcnt;
 };
+
+/**
+ * Initialise a timer
+ *
+ * @v timer		Retry timer
+ * @v expired		Timer expired callback
+ * @v refcnt		Reference counter, or NULL
+ */
+static inline __attribute__ (( always_inline )) void
+timer_init ( struct retry_timer *timer,
+	     void ( * expired ) ( struct retry_timer *timer, int over ),
+	     struct refcnt *refcnt ) {
+	timer->expired = expired;
+	timer->refcnt = refcnt;
+}
 
 extern void start_timer ( struct retry_timer *timer );
 extern void start_timer_fixed ( struct retry_timer *timer,

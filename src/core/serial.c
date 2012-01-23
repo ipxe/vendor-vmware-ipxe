@@ -93,6 +93,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define uart_writeb(val,addr) outb((val),(addr))
 #endif
 
+static int serial_present = 0;
+
 /*
  * void serial_putc(int ch);
  *	Write character `ch' to port UART_BASE.
@@ -100,6 +102,11 @@ FILE_LICENCE ( GPL2_OR_LATER );
 void serial_putc ( int ch ) {
 	int i;
 	int status;
+
+        if (!serial_present) {
+           return;
+        }
+
 	i = 1000; /* timeout */
 	while(--i > 0) {
 		status = uart_readb(UART_BASE + UART_LSR);
@@ -119,6 +126,11 @@ void serial_putc ( int ch ) {
 int serial_getc ( void ) {
 	int status;
 	int ch;
+
+        if (!serial_present) {
+           return 0;
+        }
+
 	do {
 		status = uart_readb(UART_BASE + UART_LSR);
 	} while((status & 1) == 0);
@@ -137,6 +149,11 @@ int serial_getc ( void ) {
  */
 int serial_ischar ( void ) {
 	int status;
+
+        if (!serial_present) {
+           return 0;
+        }
+
 	status = uart_readb(UART_BASE + UART_LSR);	/* line status reg; */
 	return status & 1;		/* rx char available */
 }
@@ -217,6 +234,8 @@ static void serial_init ( void ) {
 		/* line status reg */
 		status = uart_readb(UART_BASE + UART_LSR);
 	} while(status & UART_LSR_DR);
+
+        serial_present = 1;
  out:
 	return;
 }

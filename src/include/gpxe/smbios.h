@@ -94,6 +94,14 @@ struct smbios_structure {
 	size_t strings_len;
 };
 
+/** Linked list node containing SMBIOS structure descriptor */
+struct smbios_structure_node {
+	/** Pointer to the smbios structure */
+	struct smbios_structure structure;
+	/** Pointer to the next node. */
+	struct smbios_structure_node *next;
+} __attribute__ (( packed ));
+
 /** SMBIOS system information structure */
 struct smbios_system_information {
 	/** SMBIOS structure header */
@@ -115,6 +123,27 @@ struct smbios_system_information {
 /** SMBIOS system information structure type */
 #define SMBIOS_TYPE_SYSTEM_INFORMATION 1
 
+/** SMBIOS baseboard information structure */
+struct smbios_baseboard_information {
+	/** SMBIOS structure header */
+	struct smbios_header header;
+	/** Manufacturer string */
+	uint8_t manufacturer;
+	/** Type string */
+	uint8_t type;
+	/** Version string */
+	uint8_t version;
+	/** Serial number string */
+	uint8_t serial;
+	/** Asset tag */
+	uint8_t asset_tag;
+	/** Feature flags */
+	uint8_t feature_flags;
+} __attribute__ (( packed ));
+
+/** SMBIOS enclosure information structure type */
+#define SMBIOS_TYPE_BASEBOARD_INFORMATION 2
+
 /** SMBIOS enclosure information structure */
 struct smbios_enclosure_information {
 	/** SMBIOS structure header */
@@ -134,6 +163,17 @@ struct smbios_enclosure_information {
 /** SMBIOS enclosure information structure type */
 #define SMBIOS_TYPE_ENCLOSURE_INFORMATION 3
 
+/** SMBIOS enclosure information structure */
+struct smbios_oem_strings {
+	/** SMBIOS structure header */
+	struct smbios_header header;
+	/** Number of strings */
+	uint8_t count;
+} __attribute__ (( packed ));
+
+/** SMBIOS oem information structure type */
+#define SMBIOS_TYPE_OEM_INFORMATION 11
+
 /**
  * SMBIOS entry point descriptor
  *
@@ -152,6 +192,9 @@ struct smbios {
 extern int find_smbios ( struct smbios *smbios );
 extern int find_smbios_structure ( unsigned int type,
 				   struct smbios_structure *structure );
+extern void free_smbios_structures ( struct smbios_structure_node **node );
+extern int find_smbios_structures ( unsigned int type,
+				   struct smbios_structure_node **start );
 extern int read_smbios_structure ( struct smbios_structure *structure,
 				   void *data, size_t len );
 extern int read_smbios_string ( struct smbios_structure *structure,

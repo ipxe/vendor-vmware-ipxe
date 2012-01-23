@@ -19,13 +19,111 @@
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <errno.h>
+#include <stdlib.h>
 #include <gpxe/efi/efi.h>
 #include <gpxe/image.h>
+#include <gpxe/init.h>
 #include <gpxe/features.h>
+#include <gpxe/uri.h>
 
 FEATURE ( FEATURE_IMAGE, "EFI", DHCP_EB_FEATURE_EFI, 1 );
 
 struct image_type efi_image_type __image_type ( PROBE_NORMAL );
+
+/** EFI loaded image protocol GUID */
+static EFI_GUID efi_loaded_image_protocol_guid
+	= EFI_LOADED_IMAGE_PROTOCOL_GUID;
+
+/** Event used to signal shutdown */
+static EFI_EVENT efi_shutdown_event;
+
+/**
+ * Shut down in preparation for booting an OS.
+ *
+ * This hook gets called at ExitBootServices time in order to make sure that
+ * the network cards are properly shut down before the OS takes over.
+ */
+static EFIAPI void efi_shutdown_hook ( EFI_EVENT event __unused,
+				       void *context __unused ) {
+	shutdown ( SHUTDOWN_BOOT );
+}
+
+/**
+ * Create a Unicode command line for the image
+ *
+ * @v image		EFI image
+ * @v devpath_out	Device path to pass to image (output)
+ * @v cmdline_out	Unicode command line (output)
+ * @v cmdline_len_out	Length of command line in bytes (output)
+ * @ret rc		Return status code
+ */
+static int efi_image_make_cmdline ( struct image *image,
+				    EFI_DEVICE_PATH **devpath_out,
+				    VOID **cmdline_out,
+				    UINT32 *cmdline_len_out ) {
+	char *uri;
+	size_t uri_len;
+	FILEPATH_DEVICE_PATH *devpath;
+	EFI_DEVICE_PATH *endpath;
+	size_t devpath_len;
+	CHAR16 *cmdline = NULL;
+	UINT32 cmdline_len;
+	size_t args_len = 0;
+	UINT32 i;
+
+	/* Get the URI string of the image */
+	uri_len = unparse_uri ( NULL, 0, image->uri, URI_ALL ) + 1;
+
+	/* Compute final command line length */
+	if ( image->cmdline != NULL ) {
+		args_len = strlen ( image->cmdline ) + 1;
+	}
+	cmdline_len = args_len + uri_len;
+
+	/* Allocate space for the uri, final command line and device path */
+	cmdline = malloc ( cmdline_len * sizeof ( CHAR16 ) + uri_len
+			   + SIZE_OF_FILEPATH_DEVICE_PATH
+			   + uri_len * sizeof ( CHAR16 )
+			   + sizeof ( EFI_DEVICE_PATH ) );
+	if ( cmdline == NULL )  {
+		return -ENOMEM;
+	}
+	uri = (char *) ( cmdline + cmdline_len );
+	devpath = (FILEPATH_DEVICE_PATH *) ( uri + uri_len );
+	endpath = (EFI_DEVICE_PATH *) ( (char *) devpath
+					+ SIZE_OF_FILEPATH_DEVICE_PATH
+					+ uri_len * sizeof ( CHAR16 ) );
+
+	/* Build the gPXE device path */
+	devpath->Header.Type = MEDIA_DEVICE_PATH;
+	devpath->Header.SubType = MEDIA_FILEPATH_DP;
+	devpath_len = SIZE_OF_FILEPATH_DEVICE_PATH
+			+ uri_len * sizeof ( CHAR16 );
+	devpath->Header.Length[0] = devpath_len & 0xFF;
+	devpath->Header.Length[1] = devpath_len >> 8;
+	endpath->Type = END_DEVICE_PATH_TYPE;
+	endpath->SubType = END_ENTIRE_DEVICE_PATH_SUBTYPE;
+	endpath->Length[0] = 4;
+	endpath->Length[1] = 0;
+	unparse_uri ( uri, uri_len, image->uri, URI_ALL );
+
+	/* Convert to Unicode */
+	for ( i = 0; i < uri_len; i++ ) {
+		cmdline[i] = uri[i];
+		devpath->PathName[i] = uri[i];
+	}
+	if ( image->cmdline ) {
+		cmdline[uri_len - 1] = ' ';
+	}
+	for ( i = 0; i < args_len; i++ ) {
+		cmdline[i + uri_len] = image->cmdline[i];
+	}
+
+	*devpath_out = &devpath->Header;
+	*cmdline_out = cmdline;
+	*cmdline_len_out = cmdline_len * sizeof ( CHAR16 );
+	return 0;
+}
 
 /**
  * Execute EFI image
@@ -35,10 +133,14 @@ struct image_type efi_image_type __image_type ( PROBE_NORMAL );
  */
 static int efi_image_exec ( struct image *image ) {
 	EFI_BOOT_SERVICES *bs = efi_systab->BootServices;
+	EFI_LOADED_IMAGE_PROTOCOL *loaded_image = NULL;
+	void *loaded_image_void;
 	EFI_HANDLE handle;
+	EFI_HANDLE device_handle = NULL;
 	UINTN exit_data_size;
 	CHAR16 *exit_data;
 	EFI_STATUS efirc;
+	int rc;
 
 	/* Attempt loading image */
 	if ( ( efirc = bs->LoadImage ( FALSE, efi_image_handle, NULL,
@@ -50,21 +152,67 @@ static int efi_image_exec ( struct image *image ) {
 		return -ENOEXEC;
 	}
 
+	/* Get the loaded image protocol for the newly loaded image */
+	efirc = bs->OpenProtocol ( handle, &efi_loaded_image_protocol_guid,
+				   &loaded_image_void, efi_image_handle, NULL,
+				   EFI_OPEN_PROTOCOL_GET_PROTOCOL );
+	if ( efirc ) {
+		/* Should never happen */
+		rc = EFIRC_TO_RC ( efirc );
+		goto done;
+	}
+	loaded_image = loaded_image_void;
+
+	/* Pass a GPXE download protocol to the image */
+	rc = efi_download_install ( &device_handle );
+	if ( rc )
+		goto done;
+	loaded_image->DeviceHandle = device_handle;
+
+	rc = efi_image_make_cmdline ( image, &loaded_image->FilePath,
+				      &loaded_image->LoadOptions,
+				      &loaded_image->LoadOptionsSize );
+	if ( rc )
+		goto done;
+
+	/* Be sure to shut down the NIC at ExitBootServices time, or else
+	 * DMA from the card can corrupt the OS.
+	 */
+	efirc = bs->CreateEvent ( EVT_SIGNAL_EXIT_BOOT_SERVICES,
+				  TPL_CALLBACK, efi_shutdown_hook,
+				  NULL, &efi_shutdown_event );
+	if ( efirc ) {
+		rc = EFIRC_TO_RC ( efirc );
+		goto done;
+	}
+
 	/* Start the image */
 	if ( ( efirc = bs->StartImage ( handle, &exit_data_size,
 					&exit_data ) ) != 0 ) {
 		DBGC ( image, "EFIIMAGE %p returned with status %s\n",
 		       image, efi_strerror ( efirc ) );
-		goto done;
 	}
 
- done:
+	rc = EFIRC_TO_RC ( efirc );
+
+	/* Remove the shutdown hook */
+	bs->CloseEvent ( efi_shutdown_event );
+
+done:
+	if ( device_handle ) {
+		efi_download_uninstall ( device_handle );
+	}
+
+	if ( loaded_image && loaded_image->LoadOptions ) {
+		free ( loaded_image->LoadOptions );
+	}
+
 	/* Unload the image.  We can't leave it loaded, because we
 	 * have no "unload" operation.
 	 */
 	bs->UnloadImage ( handle );
 
-	return EFIRC_TO_RC ( efirc );
+	return rc;
 }
 
 /**

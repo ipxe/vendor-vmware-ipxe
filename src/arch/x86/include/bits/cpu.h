@@ -43,10 +43,11 @@
 
 /** x86 CPU information */
 struct cpuinfo_x86 {
+	char vendor[13];
 	/** CPU features */
-	unsigned int features;
+	unsigned int features[4];
 	/** 64-bit CPU features */
-	unsigned int amd_features;
+	unsigned int amd_features[2];
 };
 
 /*

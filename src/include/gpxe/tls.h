@@ -52,6 +52,13 @@ struct tls_header {
 /** Application data content type */
 #define TLS_TYPE_DATA 23
 
+/** Handshake message type */
+struct tls_handshake_msg {
+	uint8_t type;
+	uint8_t length[3];
+	uint8_t payload[0];
+} __attribute__ (( packed ));
+
 /* Handshake message types */
 #define TLS_HELLO_REQUEST 0
 #define TLS_CLIENT_HELLO 1
@@ -183,5 +190,10 @@ struct tls_session {
 
 extern int add_tls ( struct xfer_interface *xfer,
 		     struct xfer_interface **next );
+
+extern char random_data_recording[128];
+extern unsigned int random_data_recording_size;
+
+void tls_generate_random ( void *data, size_t len );
 
 #endif /* _GPXE_TLS_H */

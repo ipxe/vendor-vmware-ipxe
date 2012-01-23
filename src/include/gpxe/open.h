@@ -12,6 +12,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <stdarg.h>
 #include <gpxe/tables.h>
 #include <gpxe/socket.h>
+#include <gpxe/settings.h>
 
 struct xfer_interface;
 struct uri;
@@ -41,6 +42,14 @@ enum {
 	 * struct sockaddr *local;
 	 */
 	LOCATION_SOCKET,
+	/** Location is an HTTP/HTTPS request.
+	 *
+	 * Parameter list for open() is:
+	 *
+	 * struct uri *uri;
+	 * struct http_method *meth;
+	 */
+	LOCATION_HTTP,
 };
 
 /** A URI opener */
@@ -101,5 +110,9 @@ extern int xfer_vopen ( struct xfer_interface *xfer, int type, va_list args );
 extern int xfer_open ( struct xfer_interface *xfer, int type, ... );
 extern int xfer_vreopen ( struct xfer_interface *xfer, int type,
 			  va_list args );
+
+extern struct uri_opener *find_uri_opener(const char *scheme);
+
+extern struct setting retry_delay_setting __setting;
 
 #endif /* _GPXE_OPEN_H */

@@ -505,7 +505,7 @@ static int dns_resolv ( struct resolv_interface *resolv,
 	}
 	resolv_init ( &dns->resolv, &null_resolv_ops, &dns->refcnt );
 	xfer_init ( &dns->socket, &dns_socket_operations, &dns->refcnt );
-	dns->timer.expired = dns_timer_expired;
+	timer_init ( &dns->timer, dns_timer_expired, &dns->refcnt );
 	memcpy ( &dns->sa, sa, sizeof ( dns->sa ) );
 
 	/* Create query */

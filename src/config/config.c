@@ -10,6 +10,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <config/general.h>
 #include <config/console.h>
 
+#include <gpxe/build.h>
+
 /** @file
  *
  * Configuration options
@@ -45,7 +47,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #endif
 
 #ifdef BUILD_ID
-#define BUILD_ID_STR " " BUILD_ID
+#define BUILD_ID_STR " " XSTR(BUILD_ID)
 #else
 #define BUILD_ID_STR ""
 #endif
@@ -55,6 +57,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #else
 #define BUILD_STRING ""
 #endif
+
+const char *build_string = BUILD_STRING;
 
 /*
  * Drag in all requested console types
@@ -234,6 +238,12 @@ REQUIRE_OBJECT ( digest_cmd );
 #ifdef PXE_CMD
 REQUIRE_OBJECT ( pxe_cmd );
 #endif
+#ifdef POST_CMD
+REQUIRE_OBJECT ( post_cmd );
+#endif
+#ifdef REBOOT_CMD
+REQUIRE_OBJECT ( reboot_cmd );
+#endif
 
 /*
  * Drag in miscellaneous objects
@@ -260,3 +270,4 @@ REQUIRE_OBJECT ( gdbstub_cmd );
  */
 REQUIRE_OBJECT ( device );
 REQUIRE_OBJECT ( embedded );
+REQUIRE_OBJECT ( pci );

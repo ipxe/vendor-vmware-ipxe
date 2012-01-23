@@ -287,7 +287,9 @@ struct tcp_options {
  * that payloads remain dword-aligned.
  */
 //#define TCP_MAX_WINDOW_SIZE	( 65536 - 4 )
-#define TCP_MAX_WINDOW_SIZE	4096
+#define TCP_MAX_WINDOW_SIZE	( 8 * 1024 )
+
+#define ETHERNET_MTU_SIZE 1500
 
 /**
  * Path MTU
@@ -295,7 +297,7 @@ struct tcp_options {
  * We really ought to implement Path MTU discovery.  Until we do,
  * anything with a path MTU greater than this may fail.
  */
-#define TCP_PATH_MTU 1460
+#define TCP_PATH_MTU (ETHERNET_MTU_SIZE - 20 /* IP */ - 32 /* TCP Header */)
 
 /**
  * Advertised TCP MSS
@@ -305,13 +307,42 @@ struct tcp_options {
  * abstraction layer so that we can find out the MTU from the IP layer
  * (which would have to find out from the net device layer).
  */
-#define TCP_MSS 1460
+#define TCP_MSS (ETHERNET_MTU_SIZE - 40)
 
 /** TCP maximum segment lifetime
  *
  * Currently set to 2 minutes, as per RFC 793.
  */
 #define TCP_MSL ( 2 * 60 * TICKS_PER_SEC )
+
+/**
+ * Compare TCP sequence numbers
+ *
+ * @v seq1		Sequence number 1
+ * @v seq2		Sequence number 2
+ * @ret diff		Sequence difference
+ *
+ * Analogous to memcmp(), returns an integer less than, equal to, or
+ * greater than zero if @c seq1 is found, respectively, to be before,
+ * equal to, or after @c seq2.
+ */
+static inline __attribute__ (( always_inline )) int32_t
+tcp_cmp ( uint32_t seq1, uint32_t seq2 ) {
+	return ( ( int32_t ) ( seq1 - seq2 ) );
+}
+
+/**
+ * Check if TCP sequence number lies within window
+ *
+ * @v seq		Sequence number
+ * @v start		Start of window
+ * @v len		Length of window
+ * @ret in_window	Sequence number is within window
+ */
+static inline int tcp_in_window ( uint32_t seq, uint32_t start,
+				  uint32_t len ) {
+	return ( ( seq - start ) < len );
+}
 
 extern struct tcpip_protocol tcp_protocol;
 

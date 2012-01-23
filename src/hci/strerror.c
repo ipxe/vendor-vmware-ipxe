@@ -119,4 +119,5 @@ struct errortab common_errors[] __errortab = {
 	{ EPERM, "Operation not permitted" },
 	{ ERANGE, "Out of range" },
 	{ ETIMEDOUT, "Connection timed out" },
+	{ EAGAIN, "Resource temporarily unavailable" },
 };

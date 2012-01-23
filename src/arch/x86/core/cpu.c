@@ -14,19 +14,23 @@
  * @v flag		Flag to test
  * @ret can_change	Flag is changeable
  */
-static inline int flag_is_changeable ( unsigned int flag ) {
-	uint32_t f1, f2;
+static inline int flag_is_changeable ( unsigned long flag ) {
+	unsigned long f1, f2;
 
-	__asm__ ( "pushfl\n\t"
-		  "pushfl\n\t"
-		  "popl %0\n\t"
-		  "movl %0,%1\n\t"
-		  "xorl %2,%0\n\t"
-		  "pushl %0\n\t"
-		  "popfl\n\t"
-		  "pushfl\n\t"
-		  "popl %0\n\t"
-		  "popfl\n\t"
+        /* This code will compile for either a 32 or 64 bit target. The
+         * assembler will automatically use the default operand size in each
+         * case.
+         */
+	__asm__ ( "pushf\n\t"
+		  "pushf\n\t"
+		  "pop %0\n\t"
+		  "mov %0,%1\n\t"
+		  "xor %2,%0\n\t"
+		  "push %0\n\t"
+		  "popf\n\t"
+		  "pushf\n\t"
+		  "pop %0\n\t"
+		  "popf\n\t"
 		  : "=&r" ( f1 ), "=&r" ( f2 )
 		  : "ir" ( flag ) );
 
@@ -42,6 +46,7 @@ void get_cpuinfo ( struct cpuinfo_x86 *cpu ) {
 	unsigned int cpuid_level;
 	unsigned int cpuid_extlevel;
 	unsigned int discard_1, discard_2, discard_3;
+	unsigned int vendor[3];
 
 	memset ( cpu, 0, sizeof ( *cpu ) );
 
@@ -52,11 +57,15 @@ void get_cpuinfo ( struct cpuinfo_x86 *cpu ) {
 	}
 
 	/* Get features, if present */
-	cpuid ( 0x00000000, &cpuid_level, &discard_1,
-		&discard_2, &discard_3 );
+	cpuid ( 0x00000000, &cpuid_level, &vendor[0], &vendor[2], &vendor[1] );
+	memcpy ( &cpu->vendor[0], &vendor[0], sizeof ( vendor[0] ) );
+	memcpy ( &cpu->vendor[4], &vendor[1], sizeof ( vendor[1] ) );
+	memcpy ( &cpu->vendor[8], &vendor[2], sizeof ( vendor[2] ) );
+	cpu->vendor[12] = '\0';
 	if ( cpuid_level >= 0x00000001 ) {
-		cpuid ( 0x00000001, &discard_1, &discard_2,
-			&discard_3, &cpu->features );
+		cpuid ( 0x00000001,
+			&cpu->features[0], &cpu->features[1],
+			&cpu->features[2], &cpu->features[3] );
 	} else {
 		DBG ( "CPUID cannot return capabilities\n" );
 	}
@@ -67,7 +76,8 @@ void get_cpuinfo ( struct cpuinfo_x86 *cpu ) {
 	if ( ( cpuid_extlevel & 0xffff0000 ) == 0x80000000 ) {
 		if ( cpuid_extlevel >= 0x80000001 ) {
 			cpuid ( 0x80000001, &discard_1, &discard_2,
-				&discard_3, &cpu->amd_features );
+				&cpu->amd_features[0],
+				&cpu->amd_features[1] );
 		}
 	}
 }

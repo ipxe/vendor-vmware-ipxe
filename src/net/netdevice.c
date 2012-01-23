@@ -32,6 +32,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <gpxe/device.h>
 #include <gpxe/errortab.h>
 #include <gpxe/netdevice.h>
+#include <gpxe/timer.h>
+#include <gpxe/malloc.h>
 
 /** @file
  *
@@ -574,7 +576,7 @@ int net_rx ( struct io_buffer *iobuf, struct net_device *netdev,
 	DBGC ( netdev, "NETDEV %p unknown network protocol %04x\n",
 	       netdev, ntohs ( net_proto ) );
 	free_iob ( iobuf );
-	return 0;
+	return -EPROTONOSUPPORT;
 }
 
 /**
@@ -630,4 +632,40 @@ static void net_step ( struct process *process __unused ) {
 struct process net_process __permanent_process = {
 	.list = LIST_HEAD_INIT ( net_process.list ),
 	.step = net_step,
+};
+
+/**
+ * Discard packets from the network device receive queue.  It's possible that
+ * the NIC is receiving a bunch of extraneous packets that are taking up a lot
+ * of memory.  These buffers are especially costly since they need to be aligned
+ * to a 2KB boundary.  Rather than fail with an ENOMEM, we should dump some
+ * packets in the queue and hope the higher layers can deal with it.
+ *
+ * Out of memory errors can occur during a TLS transfer since a record can be
+ * 16KB long.  Dumping the receive queue seems to free up enough memory so that
+ * TLS can do its thing and TCP seems to recover from any packets that might've
+ * been dropped.
+ *
+ * @ret discarded	Number of cached items discarded
+ */
+static unsigned int netdev_discard ( void ) {
+	struct net_device *netdev;
+	struct io_buffer *iobuf;
+	unsigned int discarded = 0;
+
+	/* Try to drop one queued RX packet from each device */
+	list_for_each_entry ( netdev, &net_devices, list ) {
+		iobuf = netdev_rx_dequeue ( netdev );
+		if ( iobuf ) {
+			netdev_rx_err ( netdev, iobuf, -ENOMEM );
+			discarded++;
+		}
+	}
+
+	return discarded;
+}
+
+/** NETDEV cache discarder */
+struct cache_discarder netdev_cache_discarder __cache_discarder = {
+	.discard = netdev_discard,
 };

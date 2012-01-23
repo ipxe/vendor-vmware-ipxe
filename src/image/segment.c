@@ -27,6 +27,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <errno.h>
 #include <gpxe/uaccess.h>
+#include <gpxe/io.h>
 #include <gpxe/memmap.h>
 #include <gpxe/errortab.h>
 #include <gpxe/segment.h>

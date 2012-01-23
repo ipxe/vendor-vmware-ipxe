@@ -35,7 +35,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <stdio.h>
 #include <unistd.h>
 #include <byteswap.h>
-#include <gpxe/io.h>
+#include <gpxe/memmap.h>
 #include <mii.h>
 #include <gpxe/iobuf.h>
 #include <gpxe/malloc.h>
@@ -43,7 +43,6 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <gpxe/netdevice.h>
 #include <gpxe/ethernet.h>
 #include <gpxe/if_ether.h>
-#include <gpxe/memmap.h>
 #include "b44.h"
 
 
@@ -89,6 +88,8 @@ int phys_ram_within_limit(u64 limit)
 	struct memory_region *highest = NULL;
 	get_memmap(&memmap);
 
+	if (memmap.count == 0)
+		return 0;
 	highest = &memmap.regions[memmap.count - 1];
 
 	return (highest->end < limit);

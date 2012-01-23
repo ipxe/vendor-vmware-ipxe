@@ -22,15 +22,30 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <string.h>
 #include <errno.h>
 #include <gpxe/xfer.h>
+#include <gpxe/tls.h>
 #include <gpxe/uri.h>
 #include <gpxe/socket.h>
 #include <gpxe/open.h>
+#include <gpxe/http.h>
 
 /** @file
  *
  * Data transfer interface opening
  *
  */
+
+struct uri_opener *find_uri_opener(const char *scheme)
+{
+	struct uri_opener *opener;
+	
+	for_each_table_entry ( opener, URI_OPENERS ) {
+		if ( strcmp ( scheme, opener->scheme ) == 0 ) {
+			return opener;
+		}
+	}
+	
+	return NULL;
+}
 
 /**
  * Open URI
@@ -150,6 +165,34 @@ int xfer_vopen ( struct xfer_interface *xfer, int type, va_list args ) {
 		struct sockaddr *local = va_arg ( args, struct sockaddr * );
 
 		return xfer_open_socket ( xfer, semantics, peer, local ); }
+	case LOCATION_HTTP: {
+		struct uri *uri = va_arg ( args, struct uri * );
+		struct http_method *meth = va_arg ( args, struct http_method * );
+		unsigned int default_port;
+		struct uri *resolved_uri;
+		http_callback_t cb;
+		int rc;
+
+		resolved_uri = resolve_uri ( cwuri, uri );
+		if ( ! resolved_uri )
+		    return -ENOMEM;
+		if ( strcmp ( resolved_uri->scheme, "http" ) == 0 ) {
+			default_port = HTTP_PORT;
+			cb = NULL;
+		}
+		else {
+			default_port = HTTPS_PORT;
+			cb = add_tls;
+		}
+		
+		rc = http_open_filter ( xfer,
+					resolved_uri,
+					default_port,
+					cb,
+					meth );
+		uri_put ( resolved_uri );
+		
+		return rc; }
 	default:
 		DBGC ( xfer, "XFER %p attempted to open unsupported location "
 		       "type %d\n", xfer, type );
@@ -195,3 +238,12 @@ int xfer_vreopen ( struct xfer_interface *xfer, int type, va_list args ) {
 	/* Open new location */
 	return xfer_vopen ( xfer, type, args );
 }
+
+/** Retry delay setting */
+struct setting retry_delay_setting __setting = {
+	.name = "retry-delay",
+	.description = "Number of seconds to delay before retrying a download",
+	.type = &setting_type_int32,
+};
+
+/* TODO: Add a max-retries setting? */

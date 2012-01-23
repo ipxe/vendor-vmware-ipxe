@@ -33,6 +33,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <byteswap.h>
 #include <errno.h>
 #include <assert.h>
+#include <unistd.h>
 #include <gpxe/uri.h>
 #include <gpxe/refcnt.h>
 #include <gpxe/iobuf.h>
@@ -84,6 +85,14 @@ struct http_request {
 	enum http_rx_state rx_state;
 	/** Line buffer for received header lines */
 	struct line_buffer linebuf;
+
+	struct http_method method;
+};
+
+static struct http_method default_method = {
+	.method = "GET",
+	.body = NULL,
+	.body_len = 0,
 };
 
 /**
@@ -95,6 +104,7 @@ static void http_free ( struct refcnt *refcnt ) {
 	struct http_request *http =
 		container_of ( refcnt, struct http_request, refcnt );
 
+	free ( http->method.body );
 	uri_put ( http->uri );
 	empty_line_buffer ( &http->linebuf );
 	free ( http );
@@ -107,6 +117,12 @@ static void http_free ( struct refcnt *refcnt ) {
  * @v rc		Return status code
  */
 static void http_done ( struct http_request *http, int rc ) {
+
+	/* If we didn't receive a valid response, flag an error.
+	 */
+	if ( http->rx_state != HTTP_RX_DATA ) {
+		rc = -EIO;
+	}
 
 	/* Prevent further processing of any current packet */
 	http->rx_state = HTTP_RX_DEAD;
@@ -149,6 +165,11 @@ static int http_response_to_rc ( unsigned int response ) {
 		return -EPERM;
 	case 401:
 		return -EACCES;
+	case 502:
+	case 503:
+	case 504:
+	case 509:
+		return -EAGAIN;
 	default:
 		return -EIO;
 	}
@@ -360,6 +381,7 @@ static int http_socket_deliver_iob ( struct xfer_interface *socket,
 	struct http_request *http =
 		container_of ( socket, struct http_request, socket );
 	struct http_line_handler *lh;
+	int retry_delay;
 	char *line;
 	ssize_t len;
 	int rc = 0;
@@ -403,8 +425,39 @@ static int http_socket_deliver_iob ( struct xfer_interface *socket,
 	}
 
  done:
-	if ( rc )
+	switch ( rc ) {
+	case 0:
+		break;
+	case -EAGAIN:
+		/*
+		 * If the server returned a 503, delay for a few seconds and
+		 * then try again.
+		 */
+		retry_delay = fetch_intz_setting ( NULL, &retry_delay_setting );
+
+		if ( retry_delay ) {
+			struct xfer_interface *dest =
+				xfer_get_dest ( &http->xfer );
+			struct uri *uri = uri_get ( http->uri );
+			struct http_method meth = http->method;
+
+			DBGC ( http, "HTTP %p retrying download\n", http );
+			xfer_close ( dest, 0 );
+
+			sleep ( retry_delay );
+
+			rc = xfer_open ( dest,
+					 LOCATION_HTTP,
+					 uri,
+					 &meth );
+
+			xfer_put ( dest );
+			break;
+		}
+	default:
 		http_done ( http, rc );
+		break;
+	}
 	free_iob ( iobuf );
 	return rc;
 }
@@ -418,7 +471,9 @@ static void http_step ( struct process *process ) {
 	struct http_request *http =
 		container_of ( process, struct http_request, process );
 	const char *host = http->uri->host;
+	const char *port = http->uri->port;
 	const char *user = http->uri->user;
+	const char *body = http->method.body;
 	const char *password =
 		( http->uri->password ? http->uri->password : "" );
 	size_t user_pw_len = ( user ? ( strlen ( user ) + 1 /* ":" */ +
@@ -432,6 +487,9 @@ static void http_step ( struct process *process ) {
 
 	if ( xfer_window ( &http->socket ) ) {
 		char request[request_len + 1];
+		char content_hdrs[256];
+
+		content_hdrs[0] = '\0';
 
 		/* Construct path?query request */
 		unparse_uri ( request, sizeof ( request ), http->uri,
@@ -450,22 +508,41 @@ static void http_step ( struct process *process ) {
 			base64_encode ( user_pw, user_pw_base64 );
 		}
 
+		if ( body ) {
+			snprintf(content_hdrs, sizeof(content_hdrs),
+				 "Content-Type: %s\r\n"
+				 "Content-Length: %zd\r\n",
+				 http->method.content_type,
+				 http->method.body_len);
+		}
+
 		/* Send GET request */
 		if ( ( rc = xfer_printf ( &http->socket,
-					  "GET %s%s HTTP/1.0\r\n"
+					  "%s %s%s HTTP/1.0\r\n"
 					  "User-Agent: gPXE/" VERSION "\r\n"
 					  "%s%s%s"
-					  "Host: %s\r\n"
+					  "Host: %s%s%s\r\n"
+					  "%s"
 					  "\r\n",
+					  http->method.method,
 					  http->uri->path ? "" : "/",
 					  request,
 					  ( user ?
 					    "Authorization: Basic " : "" ),
 					  ( user ? user_pw_base64 : "" ),
 					  ( user ? "\r\n" : "" ),
-					  host ) ) != 0 ) {
+					  host,
+					  ( port ? ":" : "" ),
+					  ( port ? port : "" ),
+					  content_hdrs ) ) != 0 ) {
 			http_done ( http, rc );
 		}
+		if (body &&
+		    ( rc = xfer_deliver_raw( &http->socket,
+					     body,
+					     http->method.body_len ) ) != 0 ) {
+ 			http_done ( http, rc );
+ 		}
 	}
 }
 
@@ -532,8 +609,8 @@ static struct xfer_interface_operations http_xfer_operations = {
  */
 int http_open_filter ( struct xfer_interface *xfer, struct uri *uri,
 		       unsigned int default_port,
-		       int ( * filter ) ( struct xfer_interface *xfer,
-					  struct xfer_interface **next ) ) {
+		       http_callback_t filter,
+		       struct http_method *meth ) {
 	struct http_request *http;
 	struct sockaddr_tcpip server;
 	struct xfer_interface *socket;
@@ -548,6 +625,10 @@ int http_open_filter ( struct xfer_interface *xfer, struct uri *uri,
 	if ( ! http )
 		return -ENOMEM;
 	http->refcnt.free = http_free;
+	if ( meth )
+		http->method = *meth;
+	else
+		http->method = default_method;
 	xfer_init ( &http->xfer, &http_xfer_operations, &http->refcnt );
        	http->uri = uri_get ( uri );
 	xfer_init ( &http->socket, &http_socket_operations, &http->refcnt );
@@ -587,7 +668,7 @@ int http_open_filter ( struct xfer_interface *xfer, struct uri *uri,
  * @ret rc		Return status code
  */
 static int http_open ( struct xfer_interface *xfer, struct uri *uri ) {
-	return http_open_filter ( xfer, uri, HTTP_PORT, NULL );
+	return http_open_filter ( xfer, uri, HTTP_PORT, NULL, NULL );
 }
 
 /** HTTP URI opener */

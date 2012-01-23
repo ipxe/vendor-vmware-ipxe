@@ -28,6 +28,7 @@ CFLAGS			+= -Ui386
 
 # x86_64-specific directories containing source files
 #
+SRCDIRS		+= arch/x86_64/core
 SRCDIRS		+= arch/x86_64/prefix
 
 # Include common x86 Makefile

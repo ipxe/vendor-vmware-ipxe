@@ -110,4 +110,6 @@ struct root_driver {
 /** Declare a root device */
 #define __root_device __table_entry ( ROOT_DEVICES, 01 )
 
+struct device *find_root_device(const char *name);
+
 #endif /* _GPXE_DEVICE_H */

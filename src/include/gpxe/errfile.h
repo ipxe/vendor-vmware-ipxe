@@ -117,6 +117,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define ERRFILE_sis190		     ( ERRFILE_DRIVER | 0x00520000 )
 #define ERRFILE_myri10ge	     ( ERRFILE_DRIVER | 0x00530000 )
 #define ERRFILE_skge		     ( ERRFILE_DRIVER | 0x00540000 )
+#define ERRFILE_snpnet               ( ERRFILE_DRIVER | 0x00590000 )
+#define ERRFILE_snponly              ( ERRFILE_DRIVER | 0x005a0000 )
 
 #define ERRFILE_scsi		     ( ERRFILE_DRIVER | 0x00700000 )
 #define ERRFILE_arbel		     ( ERRFILE_DRIVER | 0x00710000 )
@@ -201,6 +203,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define ERRFILE_login_ui	      ( ERRFILE_OTHER | 0x00170000 )
 #define ERRFILE_ib_srpboot	      ( ERRFILE_OTHER | 0x00180000 )
 #define ERRFILE_iwmgmt		      ( ERRFILE_OTHER | 0x00190000 )
+#define ERRFILE_post_cmd	      ( ERRFILE_OTHER | 0x001a0000 )
 
 /** @} */
 

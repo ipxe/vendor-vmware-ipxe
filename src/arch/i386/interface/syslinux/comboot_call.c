@@ -319,6 +319,20 @@ static __asmcall void int21 ( struct i386_all_regs *ix86 ) {
 
 
 /**
+ * Dispatch PXE API call weakly
+ *
+ * @v ix86		Registers for PXE call
+ * @ret present		Zero if the PXE stack is present, nonzero if not
+ *
+ * A successful return only indicates that the PXE stack was available
+ * for dispatching the call; it says nothing about the success of
+ * whatever the call asked for.
+ */
+__weak int pxe_api_call_weak ( struct i386_all_regs *ix86 __unused ) {
+	return -1;
+}
+
+/**
  * SYSLINUX API
  */
 static __asmcall void int22 ( struct i386_all_regs *ix86 ) {
@@ -331,8 +345,8 @@ static __asmcall void int22 ( struct i386_all_regs *ix86 ) {
 		ix86->regs.ax = 0x001D;
 
 		/* SYSLINUX version number */
-		ix86->regs.ch = 0; /* major */
-		ix86->regs.cl = 0; /* minor */
+		ix86->regs.ch = 0x02; /* major */
+		ix86->regs.cl = 0x0c; /* minor */
 
 		/* SYSLINUX derivative ID */
 		ix86->regs.dl = BZI_LOADER_TYPE_GPXE;
@@ -470,6 +484,11 @@ static __asmcall void int22 ( struct i386_all_regs *ix86 ) {
 
 		ix86->flags &= ~CF;
 		break;
+
+        case 0x000C: /* Final Cleanup */
+                /* FIXME: stub */
+                ix86->flags &= ~CF;
+                break;
 
 	case 0x000E: /* Get configuration file name */
 		/* FIXME: stub */
@@ -668,6 +687,10 @@ void hook_comboot_interrupts ( ) {
 		              "pushl %0\n\t"
 		              "pushw %%cs\n\t"
 		              "call prot_call\n\t"
+                              "push %%bp\n\t"
+                              "mov %%sp, %%bp\n\t"
+                              "setc 10(%%bp)\n\t"
+                              "pop %%bp\n\t"
 		              "addw $4, %%sp\n\t"
 		              "iret\n\t" )
 		          : : "i" ( int20 ) );
@@ -680,6 +703,10 @@ void hook_comboot_interrupts ( ) {
 		              "pushl %0\n\t"
 		              "pushw %%cs\n\t"
 		              "call prot_call\n\t"
+                              "push %%bp\n\t"
+                              "mov %%sp, %%bp\n\t"
+                              "setc 10(%%bp)\n\t"
+                              "pop %%bp\n\t"
 		              "addw $4, %%sp\n\t"
 		              "iret\n\t" )
 		          : : "i" ( int21 ) );
@@ -692,6 +719,10 @@ void hook_comboot_interrupts ( ) {
 		              "pushl %0\n\t"
 		              "pushw %%cs\n\t"
 		              "call prot_call\n\t"
+                              "push %%bp\n\t"
+                              "mov %%sp, %%bp\n\t"
+                              "setc 10(%%bp)\n\t"
+                              "pop %%bp\n\t"
 		              "addw $4, %%sp\n\t"
 		              "iret\n\t" )
 		          : : "i" ( int22) );

@@ -80,6 +80,21 @@ __asmcall int main ( void ) {
 		} else {
 			autoboot();
 		}
+		
+		for_each_image ( image ) {
+			if ( strncmp( image->name, "__on_error", 10 ) == 0 ) {
+				int rc;
+				
+				if ( ( rc = image_autoload ( image ) ) != 0 ) {
+					DBG ( "Could not load embedded image "
+					      "\"%s\": %s\n",
+					      image->name, strerror ( rc ) );
+					break;
+				}
+				image_exec ( image );
+				break;
+			}
+		}
 
 		if ( shell_banner() )
 			shell();

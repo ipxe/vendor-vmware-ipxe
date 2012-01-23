@@ -36,9 +36,20 @@
 #define __GNUC__ 1
 #endif
 
+/* EFI headers think your compiler uses the MS ABI by default on X64 */
+#if __x86_64__
+#define EFIAPI __attribute__((ms_abi))
+#endif
+
+/* EFI headers assume regparm(0) on i386, but that is not the case for gPXE */
+#if __i386__
+#define EFIAPI __attribute__((cdecl,regparm(0)))
+#endif
+
 /* Include the top-level EFI header files */
 #include <gpxe/efi/Uefi.h>
 #include <gpxe/efi/PiDxe.h>
+#include <gpxe/efi/Protocol/LoadedImage.h>
 
 /* Reset any trailing #pragma pack directives */
 #pragma pack(1)
@@ -132,11 +143,14 @@ struct efi_config_table {
 #define EFIRC_TO_RC( efirc ) (efirc)
 
 extern EFI_HANDLE efi_image_handle;
+extern EFI_LOADED_IMAGE_PROTOCOL *efi_loaded_image;
 extern EFI_SYSTEM_TABLE *efi_systab;
 
 extern const char * efi_strerror ( EFI_STATUS efirc );
 extern EFI_STATUS efi_init ( EFI_HANDLE image_handle,
 			     EFI_SYSTEM_TABLE *systab );
 extern int efi_snp_install ( void );
+extern int efi_download_install ( EFI_HANDLE *device_handle );
+extern void efi_download_uninstall ( EFI_HANDLE device_handle );
 
 #endif /* _EFI_H */

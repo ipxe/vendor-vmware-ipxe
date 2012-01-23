@@ -14,9 +14,11 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define PCIAPI_PCBIOS
 #define TIMER_PCBIOS
 #define CONSOLE_PCBIOS
+#define CONSOLE_SERIAL
 #define NAP_PCBIOS
 #define UMALLOC_MEMTOP
 #define SMBIOS_PCBIOS
+#define REBOOT_PCBIOS
 
 #define	IMAGE_ELF		/* ELF image support */
 #define	IMAGE_MULTIBOOT		/* MultiBoot image support */

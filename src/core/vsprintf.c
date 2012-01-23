@@ -24,6 +24,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <console.h>
 #include <errno.h>
 #include <gpxe/vsprintf.h>
+#include <gpxe/serial.h>
 
 /** @file */
 
@@ -418,6 +419,29 @@ int printf ( const char *fmt, ... ) {
 
 	va_start ( args, fmt );
 	i = vprintf ( fmt, args );
+	va_end ( args );
+	return i;
+}
+
+static void serial_putchar( struct printf_context *ctx __unused,
+			    unsigned int c ) {
+	serial_putc ( c );
+}
+
+int dbg_vprintf ( const char *fmt, va_list args ) {
+	struct printf_context ctx;
+
+	/* Hand off to vcprintf */
+	ctx.handler = serial_putchar;
+	return vcprintf ( &ctx, fmt, args );	
+}
+
+int dbg_printf( const char *fmt, ... ) {
+	va_list args;
+	int i;
+
+	va_start ( args, fmt );
+	i = dbg_vprintf ( fmt, args );
 	va_end ( args );
 	return i;
 }

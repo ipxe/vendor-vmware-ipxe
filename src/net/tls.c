@@ -29,6 +29,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
+#include <config/general.h>
 #include <byteswap.h>
 #include <gpxe/hmac.h>
 #include <gpxe/md5.h>
@@ -120,15 +121,35 @@ static void tls_close ( struct tls_session *tls, int rc ) {
  ******************************************************************************
  */
 
+#ifdef GATHER_RANDOM
+char random_data_recording[128];
+unsigned int random_data_recording_size = 0;
+#endif
+
 /**
  * Generate random data
  *
  * @v data		Buffer to fill
  * @v len		Length of buffer
  */
-static void tls_generate_random ( void *data, size_t len ) {
+void tls_generate_random ( void *data, size_t len ) {
 	/* FIXME: Some real random data source would be nice... */
 	memset ( data, 0x01, len );
+
+#ifdef GATHER_RANDOM
+	/* Save the random data for analysis. */
+	if ( random_data_recording_size < sizeof ( random_data_recording ) ) {
+		if ( random_data_recording_size + len >
+		     sizeof ( random_data_recording ) ) {
+			len = sizeof ( random_data_recording ) -
+				random_data_recording_size;
+		}
+		memcpy ( &random_data_recording[random_data_recording_size],
+			 data,
+			 len );
+		random_data_recording_size += len;
+	}
+#endif
 }
 
 /**
@@ -964,49 +985,59 @@ static int tls_new_finished ( struct tls_session *tls,
  */
 static int tls_new_handshake ( struct tls_session *tls,
 			       void *data, size_t len ) {
-	struct {
-		uint8_t type;
-		uint8_t length[3];
-		uint8_t payload[0];
-	} __attribute__ (( packed )) *handshake = data;
-	void *payload = &handshake->payload;
-	size_t payload_len = tls_uint24 ( handshake->length );
-	void *end = ( payload + payload_len );
-	int rc;
+	void *data_end = ( data + len );
+	int rc = 0;
 
-	/* Sanity check */
-	if ( end != ( data + len ) ) {
-		DBGC ( tls, "TLS %p received overlength Handshake\n", tls );
+	while ( data < data_end ) {
+		struct tls_handshake_msg *handshake = data;
+		void *payload = &handshake->payload;
+		size_t payload_len = tls_uint24 ( handshake->length );
+
+		DBGC ( tls, "TLS %p received Handshake %d %p %zd\n",
+		       tls,
+		       handshake->type,
+		       payload,
+		       payload_len );
+		
+		switch ( handshake->type ) {
+		case TLS_SERVER_HELLO:
+			rc = tls_new_server_hello ( tls, payload, payload_len );
+			break;
+		case TLS_CERTIFICATE:
+			rc = tls_new_certificate ( tls, payload, payload_len );
+			break;
+		case TLS_SERVER_HELLO_DONE:
+			rc = tls_new_server_hello_done ( tls, payload, payload_len );
+			break;
+		case TLS_FINISHED:
+			rc = tls_new_finished ( tls, payload, payload_len );
+			break;
+		default:
+			DBGC ( tls, "TLS %p ignoring handshake type %d\n",
+			       tls, handshake->type );
+			rc = 0;
+			break;
+		}
+		
+		/* Add to handshake digest (except for Hello Requests, which
+		 * are explicitly excluded).
+		 */
+		if ( handshake->type != TLS_HELLO_REQUEST )
+			tls_add_handshake ( tls, data,
+					    sizeof ( *handshake ) +
+					    payload_len );
+
+		data += sizeof ( *handshake ) + payload_len;
+	}
+
+	if ( data != data_end ) {
+		DBGC ( tls, "TLS %p received overlength Handshake %p %p\n",
+		       tls,
+		       data,
+		       data_end );
 		DBGC_HD ( tls, data, len );
-		return -EINVAL;
 	}
-
-	switch ( handshake->type ) {
-	case TLS_SERVER_HELLO:
-		rc = tls_new_server_hello ( tls, payload, payload_len );
-		break;
-	case TLS_CERTIFICATE:
-		rc = tls_new_certificate ( tls, payload, payload_len );
-		break;
-	case TLS_SERVER_HELLO_DONE:
-		rc = tls_new_server_hello_done ( tls, payload, payload_len );
-		break;
-	case TLS_FINISHED:
-		rc = tls_new_finished ( tls, payload, payload_len );
-		break;
-	default:
-		DBGC ( tls, "TLS %p ignoring handshake type %d\n",
-		       tls, handshake->type );
-		rc = 0;
-		break;
-	}
-
-	/* Add to handshake digest (except for Hello Requests, which
-	 * are explicitly excluded).
-	 */
-	if ( handshake->type != TLS_HELLO_REQUEST )
-		tls_add_handshake ( tls, data, len );
-
+	
 	return rc;
 }
 

@@ -31,6 +31,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ctype.h>
 #include <gpxe/vsprintf.h>
 #include <gpxe/uri.h>
+#include <gpxe/open.h>
 
 /**
  * Dump URI for debugging
@@ -104,7 +105,18 @@ struct uri * parse_uri ( const char *uri_string ) {
 		/* Absolute URI: identify hierarchical/opaque */
 		uri->scheme = raw;
 		*(tmp++) = '\0';
-		if ( *tmp == '/' ) {
+
+		if ( !find_uri_opener( uri->scheme ) ) {
+			/*
+			 * An unknown scheme probably means the file name has a
+			 * colon in it, so we restore the colon that was
+			 * erased.
+			 */
+			tmp -= 1;
+			*tmp = ':';
+			path = raw;
+			uri->scheme = NULL;
+		} else if ( *tmp == '/' ) {
 			/* Absolute URI with hierarchical part */
 			path = tmp;
 		} else {

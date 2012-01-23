@@ -13,6 +13,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 struct net_device;
 struct net_protocol;
+struct ll_protocol;
 
 /** A network-layer protocol that relies upon ARP */
 struct arp_net_protocol {
@@ -36,6 +37,11 @@ struct arp_net_protocol {
 #define __arp_net_protocol __table_entry ( ARP_NET_PROTOCOLS, 01 )
 
 extern struct net_protocol arp_protocol;
+
+extern void arp_current_packet ( struct net_protocol *net_protocol,
+				 struct ll_protocol *ll_protocol,
+				 const void *net_addr,
+				 const void *ll_addr );
 
 extern int arp_resolve ( struct net_device *netdev,
 			 struct net_protocol *net_protocol,

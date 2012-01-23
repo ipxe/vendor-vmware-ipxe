@@ -57,13 +57,54 @@ struct arp_entry {
  */
 #define NUM_ARP_ENTRIES 4
 
+/** The number of entries in the ARP cache, plus an entry for the current
+ * packet.
+ */
+#define ARP_TABLE_SIZE (NUM_ARP_ENTRIES + 1)
+
 /** The ARP cache */
-static struct arp_entry arp_table[NUM_ARP_ENTRIES];
-#define arp_table_end &arp_table[NUM_ARP_ENTRIES]
+static struct arp_entry arp_table[ARP_TABLE_SIZE];
+#define arp_table_end &arp_table[ARP_TABLE_SIZE]
 
 static unsigned int next_new_arp_entry = 0;
 
 struct net_protocol arp_protocol;
+
+/**
+ * Store the address mapping for the current packet in the ARP table.
+ *
+ * Rather than maintaining a large ARP table, we store the address mapping for
+ * the packet that is currently being processed.  This should help save space
+ * without hurting performance or functionality since gPXE is rarely the target
+ * for requests from other hosts.  When gPXE does need to handle unsolicited
+ * packets from another host, such as a ping, we should be able to reply
+ * immediately using this mapping.
+ *
+ * The implementation places the mapping in the last slot of the arp_table which
+ * is reserved for the current mapping.  Normal ARP updates will not overwrite
+ * this slot, but the arp_find_entry function will check the slot for a hit.
+ *
+ * @v net_protocol Network-layer protocol
+ * @v ll_protocol Link-layer protocol
+ * @v net_addr The network address
+ * @v ll_addr The link-layer address
+ */
+void arp_current_packet ( struct net_protocol *net_protocol,
+			  struct ll_protocol *ll_protocol,
+			  const void *net_addr,
+			  const void *ll_addr )
+{
+	struct arp_entry *arp = &arp_table[NUM_ARP_ENTRIES];
+
+	arp->net_protocol = net_protocol;
+	arp->ll_protocol = ll_protocol;
+	memcpy ( arp->net_addr, net_addr, net_protocol->net_addr_len );
+	memcpy ( arp->ll_addr, ll_addr, ll_protocol->ll_addr_len );
+	
+	DBG ( "ARP current: %s %s => %s %s\n",
+	      net_protocol->name, net_protocol->ntoa ( arp->net_addr ),
+	      ll_protocol->name, ll_protocol->ntoa ( arp->ll_addr ) );
+}
 
 /**
  * Find entry in the ARP cache
@@ -232,8 +273,14 @@ static int arp_rx ( struct io_buffer *iobuf, struct net_device *netdev,
 	if ( arp_net_protocol->check ( netdev, arp_target_pa ( arphdr ) ) != 0)
 		goto done;
 	
-	/* Create new ARP table entry if necessary */
-	if ( ! merge ) {
+	/* Create a new ARP table entry for any replies where an entry does not
+	 * already exist.  We do not store addresses gathered from requests
+	 * since it will overwrite existing entries in the small ARP table and
+	 * cause some thrashing.  The ARP entry inserted at the end of the
+	 * arp_table for the packet currently being processed should help
+	 * avoid any unnecessary requests.
+	 */
+	if ( ( arphdr->ar_op == htons ( ARPOP_REPLY ) ) && ! merge ) {
 		arp = &arp_table[next_new_arp_entry++ % NUM_ARP_ENTRIES];
 		arp->ll_protocol = ll_protocol;
 		arp->net_protocol = net_protocol;

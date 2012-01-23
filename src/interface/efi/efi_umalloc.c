@@ -19,6 +19,7 @@
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <assert.h>
+#include <gpxe/memmap.h>
 #include <gpxe/umalloc.h>
 #include <gpxe/efi/efi.h>
 
@@ -95,4 +96,16 @@ static userptr_t efi_urealloc ( userptr_t old_ptr, size_t new_size ) {
 	return new_ptr;
 }
 
+/**
+ * Get memory map
+ *
+ * Can't be done on EFI so return an empty map
+ *
+ * @v memmap		Memory map to fill in
+ */
+static void efi_get_memmap ( struct memory_map *memmap ) {
+	memmap->count = 0;
+}
+
 PROVIDE_UMALLOC ( efi, urealloc, efi_urealloc );
+PROVIDE_UMALLOC ( efi, get_memmap, efi_get_memmap );
